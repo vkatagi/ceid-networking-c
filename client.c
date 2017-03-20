@@ -7,6 +7,8 @@
 #include <netinet/in.h>
 #include <netdb.h>
 
+#define BUF_SIZE 255
+
 void usage() {
 	printf("\nUSAGE:\n");
 }
@@ -14,7 +16,7 @@ void usage() {
 void add_get(int sockfd, char* key) {
 	int written;
 	int datalen;
-	char* data = (char *)malloc(200 * sizeof(data));
+	char* data = (char *)malloc(BUF_SIZE * sizeof(data));
 
 	printf("Adding command get with key: '%s'\n", key);
 
@@ -27,13 +29,14 @@ void add_get(int sockfd, char* key) {
 	written = write(sockfd, data, datalen);
 	if (written != datalen) {
 		printf("Could not write to socket\n");
+		exit(0);
 	}
 }
 
 void add_put(int sockfd, const char* key, const char* value) {
 	int written;
 	int datalen;
-	char* data = (char *)malloc(200 * sizeof(data));
+	char* data = (char *)malloc(BUF_SIZE * sizeof(data));
 
 	printf("Adding command put with key: '%s' and value: '%s'\n", key, value);
 
@@ -47,6 +50,7 @@ void add_put(int sockfd, const char* key, const char* value) {
 	written = write(sockfd, data, datalen);
 	if (written != datalen) {
 		printf("Could not write to socket\n");
+		exit(0);
 	}
 }
 
@@ -72,7 +76,7 @@ int main(int argc, char** argv){
 	server = gethostbyname(hostname);
 	if (!server) {
 		printf("Invalid or unreachable server\n");
-		return 0;
+		exit(0);
 	}
 
 	bzero((char *) &serv_addr, sizeof(serv_addr));
@@ -84,7 +88,7 @@ int main(int argc, char** argv){
 
 	if (connect(sockfd,(struct sockaddr *) &serv_addr,sizeof(serv_addr)) < 0) {
 		printf("error connecting.\n");
-		return 0;
+		exit(0);
 	}
 
 
@@ -94,6 +98,8 @@ int main(int argc, char** argv){
 
 	int arg_index = 3;
 	char* arg;
+
+	char* readbuf = (char *)malloc(BUF_SIZE * sizeof(char));
 
 	while (arg_index < argc) {
 		arg = argv[arg_index];
@@ -106,14 +112,14 @@ int main(int argc, char** argv){
 		else {
 			printf("Wrong command!\n");
 			usage();
-			return 0;
+			exit(0);
 		}
 
 		++arg_index;
 		if (arg_index >= argc) {
 			printf("No key given!\n");
 			usage();
-			return 0;
+			exit(0);
 		}
 
 		key = argv[arg_index];
@@ -123,12 +129,14 @@ int main(int argc, char** argv){
 		switch(command) {
 			case 103:
 				add_get(sockfd, key);
+				read(sockfd, readbuf, BUF_SIZE);
+				printf("%s\n", readbuf);
 				break;
 			case 112:
 				if (arg_index >= argc) {
 					printf("No value given!\n");
 					usage();
-					return 0;
+					exit(0);
 				}
 				value = argv[arg_index++];
 				add_put(sockfd, key, value);
