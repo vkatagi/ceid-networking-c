@@ -18,13 +18,9 @@ void add_get(int sockfd, char* key) {
 	int datalen;
 	char* data = (char *)malloc(BUF_SIZE * sizeof(data));
 
-	printf("Adding command get with key: '%s'\n", key);
-
 	datalen = sprintf(data, "%c%s~", 103, key);
 
 	data[datalen - 1] = '\0';
-
-	printf("Writing: %d bytes at socket!\n", datalen);
 
 	written = write(sockfd, data, datalen);
 	if (written != datalen) {
@@ -38,14 +34,10 @@ void add_put(int sockfd, const char* key, const char* value) {
 	int datalen;
 	char* data = (char *)malloc(BUF_SIZE * sizeof(data));
 
-	printf("Adding command put with key: '%s' and value: '%s'\n", key, value);
-
 	datalen = sprintf(data, "%c%s~%s~", 112, key, value);
 
 	data[strlen(key) + 1] = '\0';
 	data[datalen - 1] = '\0';
-
-	printf("Writing: %d bytes at socket!\n", datalen);
 
 	written = write(sockfd, data, datalen);
 	if (written != datalen) {
@@ -127,12 +119,12 @@ int main(int argc, char** argv){
 
 
 		switch(command) {
-			case 103:
+			case 'g':
 				add_get(sockfd, key);
 				read(sockfd, readbuf, BUF_SIZE);
 				printf("%s\n", readbuf);
 				break;
-			case 112:
+			case 'p':
 				if (arg_index >= argc) {
 					printf("No value given!\n");
 					usage();

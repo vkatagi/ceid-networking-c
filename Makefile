@@ -11,4 +11,6 @@ client:
 	$(CC) $(CFLAGS) client.c -o client.out
 echo:
 	$(CC) $(CFLAGS) echo_server.c -o echo.out
+serv1:
+	$(CC) $(CFLAGS) serv1.c -o serv1.out
 
