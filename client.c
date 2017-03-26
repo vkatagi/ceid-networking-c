@@ -116,13 +116,14 @@ int main(int argc, char** argv){
 
 		key = argv[arg_index];
 		++arg_index;
-
+		printf("Switching: %c\n", command);
 
 		switch(command) {
 			case 'g':
 				add_get(sockfd, key);
+				printf("Waiting for server!\n");
 				read(sockfd, readbuf, BUF_SIZE);
-				printf("%s\n", readbuf);
+				printf("Servers returned: %s\n", readbuf);
 				break;
 			case 'p':
 				if (arg_index >= argc) {

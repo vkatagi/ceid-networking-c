@@ -5,10 +5,12 @@
 #include <sys/types.h> 
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <sys/ioctl.h>
 
 //#define NDEBUG
 #include <assert.h>
 
+#define BUF_LEN 255
 #define MAX_KEY_LEN 255
 #define MAX_VAL_LEN 255
 
@@ -116,8 +118,23 @@ int find_value(LIST* list, char* in_key, char* out_value) {
 	return 1;
 }
 */
+
+// detects 2 /0
+int buffer_len(char* buffer) {
+	int i;	
+	char prev_char = 1;
+	for (i=0; i<BUF_LEN; ++i) {
+		if (prev_char == 0 && buffer[i] == 0) {
+			return i-1;
+		}
+		prev_char = buffer[i];
+	}
+
+	return -1;
+}
+
 LIST data;
-int parse_data(char* data, char* reply);
+int parse_data(char* data, char* reply, int* processed);
 
 int main(int argc, char** argv) {
 
@@ -125,7 +142,7 @@ int main(int argc, char** argv) {
 
 	int sockfd, newsockfd, portno;
 	socklen_t clilen;
-	char buffer[256];
+	char buffer[BUF_LEN];
 	struct sockaddr_in serv_addr, cli_addr;
 	int n;
 	
@@ -156,26 +173,50 @@ int main(int argc, char** argv) {
 
 	listen(sockfd,5);
 	clilen = sizeof(cli_addr);
-	newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
-	while (1) {
+	
 
+//	int iMode = 0;
+//	ioctl(sockfd, FIONBIO, &iMode);
+
+	while(1) {
+		newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
 		if (newsockfd < 0) {
 			perror("ERROR on accept");
 			exit(1);
 		}
-
-		bzero(buffer,256);
-		n = read(newsockfd,buffer,255);
-		if (n < 0) {
-			perror("ERROR reading from socket");
-			exit(1);
+		while(1) {
+			bzero(buffer, BUF_LEN);
+			bzero(answer, BUF_LEN);
+			printf("In Loop! - ...");
+			fflush(stdout);
+			sleep(1); // debug desync
+			n = read(newsockfd,buffer,BUF_LEN);
+			printf(" Read: %d\n", n);
+			if (n < 0) {
+				perror("ERROR reading from socket");
+				exit(1);
+			}
+			if (n == 0) {
+				break;
+			}
+			int i;
+			for (i=0; i<BUF_LEN; ++i) {
+				fprintf(stderr, "%d, ", buffer[i]);
+			}
+			int ptr = 0;
+			fprintf(stderr,"Buff len %d, ptr: %d\n", buffer_len(&buffer[ptr]), ptr);
+			while (ptr < n) {
+				if (parse_data(&buffer[ptr], answer, &ptr)) {
+					fprintf(stderr,"2- Buff len %d, ptr: %d - %d\n", buffer_len(&buffer[ptr]), ptr, n);
+					write(newsockfd, answer, BUF_LEN);
+				}
+				fprintf(stderr,"3- Buff len %d, ptr: %d\n", buffer_len(&buffer[ptr]), ptr);
+			}
 		}
-
-		if (parse_data(buffer, answer)) {
-			write(newsockfd, answer, 20);
-		}
+		close(newsockfd);
+		fprintf(stderr, "Socket closed!\n");
 	}
-	close(newsockfd);
+
 	close(sockfd);
 }
 
@@ -193,29 +234,46 @@ int get_key(char* key, char* value) {
 		printf("Key doesn't exist.\n");
 		return 0;
 	}
+	else {
+		printf("Value: '%s'\n", result->value);
+	}
 	memcpy(value, result->value, strlen(result->value));
-	return 0;
+	return 1;
 }
 
-int parse_data(char* data, char* reply) {
+int parse_data(char* data, char* reply, int* processed) {
 	char mode = data[0];
-	char* value;
+	char* value = (char *)malloc(MAX_VAL_LEN * sizeof(char));
 	char* key = (char *)malloc(MAX_KEY_LEN * sizeof(char));
 	int key_len = strlen(data)-1;
+	int data_len;
 
 	memcpy(key, &data[1], key_len+1);
-
+	*processed += key_len + 2;
 	switch(mode) {
 		case 'g': 
-			get_key(key, reply);
+			bzero(reply, MAX_VAL_LEN);
+			bzero(value, MAX_KEY_LEN);
+			if (get_key(key, value) == 0) {
+				sprintf(reply, "%c", 110);
+			}
+			else {
+				sprintf(reply, "%c%s", 102, value);
+			}
+			free(value);
+			free(key);
 			return 1;
 		case 'p':
-			value = (char *)malloc(MAX_VAL_LEN * sizeof(char));
-			memcpy(value, &data[key_len+2], strlen(&data[key_len+2])+1);
+
+			data_len = strlen(&data[key_len+2])+1;
+			memcpy(value, &data[key_len+2], data_len);
+			*processed += data_len + 1;
 			add_key(key, value);
+			free(value);
+			free(key);
 			return 0;
 	}
-	return 0;
+	return -1;
 }
 
 
