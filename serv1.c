@@ -178,6 +178,7 @@ int main(int argc, char** argv) {
 //	int iMode = 0;
 //	ioctl(sockfd, FIONBIO, &iMode);
 
+
 	while(1) {
 		newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
 		if (newsockfd < 0) {
@@ -205,8 +206,8 @@ int main(int argc, char** argv) {
 			}
 			int ptr = 0;
 			fprintf(stderr,"Buff len %d, ptr: %d\n", buffer_len(&buffer[ptr]), ptr);
-			while (ptr < n) {
-				if (parse_data(&buffer[ptr], answer, &ptr)) {
+			while (ptr < n - 1) {
+				if (parse_data(buffer + ptr, answer, &ptr)) {
 					fprintf(stderr,"2- Buff len %d, ptr: %d - %d\n", buffer_len(&buffer[ptr]), ptr, n);
 					write(newsockfd, answer, BUF_LEN);
 				}
@@ -249,7 +250,7 @@ int parse_data(char* data, char* reply, int* processed) {
 	int data_len;
 
 	memcpy(key, &data[1], key_len+1);
-	*processed += key_len + 2;
+	*processed += key_len + 1;
 	switch(mode) {
 		case 'g': 
 			bzero(reply, MAX_VAL_LEN);

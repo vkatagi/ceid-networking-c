@@ -60,7 +60,7 @@ int main(int argc, char** argv){
 	short port = atoi(argv[2]);
 
 
-	printf("Connecting to: %s on port %d\n", hostname, port);
+	fprintf(stderr, "Connecting to: %s on port %d\n", hostname, port);
 	
 
 
@@ -116,14 +116,25 @@ int main(int argc, char** argv){
 
 		key = argv[arg_index];
 		++arg_index;
-		printf("Switching: %c\n", command);
-
+		
 		switch(command) {
 			case 'g':
 				add_get(sockfd, key);
-				printf("Waiting for server!\n");
+				//fprintf(stderr, "Waiting for server!\n");
 				read(sockfd, readbuf, BUF_SIZE);
-				printf("Servers returned: %s\n", readbuf);
+				//fprintf(stderr, "Servers returned: %s\n", readbuf);
+				switch (readbuf[0]) {
+					case 102: 
+						printf("%s\n", readbuf+1);
+						break;
+					case 110:
+						printf("\n");
+						break;
+					default:
+						printf("Server failed protocol. Exiting\n");
+						close(sockfd);
+						exit(0);
+				}
 				break;
 			case 'p':
 				if (arg_index >= argc) {
