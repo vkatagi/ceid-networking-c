@@ -14,32 +14,38 @@
 #include <assert.h>
 
 #define BUF_LEN 255
-#define MAX_KEY_LEN 255
-#define MAX_VAL_LEN 255
+#define MAX_DATA_LEN 255
+
 
 #define ARRAY_MAX_ELEMENTS 10000
 
-#define SHM_SIZE ARRAY_MAX_ELEMENTS*MAX_KEY_LEN + ARRAY_MAX_ELEMENTS*MAX_VAL_LEN
+#define SHM_SIZE ARRAY_MAX_ELEMENTS*MAX_DATA_LEN*2
 
 
 #define SEM_KEY 1511
-#define SHM_KEY 6277
+#define SHM_KEY 1277
 
 pid_t parentPid;
 pid_t currentPid;
 
-char Keys[ARRAY_MAX_ELEMENTS][MAX_KEY_LEN] = {};
-char Values[ARRAY_MAX_ELEMENTS][MAX_VAL_LEN] = {};
+char Keys[ARRAY_MAX_ELEMENTS][MAX_DATA_LEN] = {};
+char Values[ARRAY_MAX_ELEMENTS][MAX_DATA_LEN] = {};
 
+//char shmdata[SHM_SIZE];
+char* shmdata;
+
+char* readshm_array(char isValue, int element_index) {
+	return (shmdata + (element_index * MAX_DATA_LEN)) + (ARRAY_MAX_ELEMENTS * isValue);	
+}
 
 int find_nofill(char* key, char* is_empty) {
 	int i;
 	for (i=0; i<ARRAY_MAX_ELEMENTS; ++i) {
-		if (Keys[i][0] == '\0') {
+		if (readshm_array(0, i)[0] == '\0') {
 			*is_empty = 1;
 			return i;
 		}
-		if (strcmp(key, Keys[i]) == 0) {
+		if (strcmp(key, readshm_array(0, i)) == 0) {
 			*is_empty = 0;
 			return i;
 		}
@@ -53,9 +59,9 @@ void insert_pair(char* key, char* value) {
 	char is_empty = 0;
 	int index = find_nofill(key, &is_empty);
 	if (is_empty) {
-		memcpy(Keys[index], key, strlen(key) + 1);
+		memcpy(readshm_array(0, index), key, strlen(key) + 1);
 	}
-	memcpy(Values[index], value, strlen(value) + 1);
+	memcpy(readshm_array(1, index), value, strlen(value) + 1);
 }
 
 int find_pair(char* key, char* value) {
@@ -68,7 +74,7 @@ int find_pair(char* key, char* value) {
 		return 0;
 	}
 
-	memcpy(value, Values[index], strlen(Values[index]) + 1);
+	memcpy(value, readshm_array(1, index), strlen(readshm_array(1, index)) + 1);
 	return 1;
 }
 
@@ -135,6 +141,19 @@ int main(int argc, char** argv) {
 		exit(1);
 	}
 
+	shmid = shmget(SHM_KEY, SHM_SIZE, IPC_CREAT | 0666);
+	if (shmid < 0) {
+		perror("Error on shmget");
+		exit(1);
+	}
+
+	shmdata = (char*) shmat(shmid, NULL, 0);
+	if (shmdata == -1) {
+		perror("Error on shmat");
+		exit(1);
+	}
+	bzero(shmdata, SHM_SIZE);
+
 	while(1) {
 		newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
 		if (newsockfd < 0) {
@@ -182,6 +201,10 @@ int main(int argc, char** argv) {
 		printf("Error on semctl clean");
 		exit(1);
 	}
+
+	shmdt(shmdata);	
+	shmctl(shmid, IPC_RMID, NULL);
+	
 	close(sockfd);
 }
 
@@ -206,8 +229,8 @@ int get_key(char* key, char* value) {
 
 int parse_data(char* data, char* reply, int* processed, int semid) {
 	char mode = data[0];
-	char* value = (char *)malloc(MAX_VAL_LEN * sizeof(char));
-	char* key = (char *)malloc(MAX_KEY_LEN * sizeof(char));
+	char* value = (char *)malloc(MAX_DATA_LEN * sizeof(char));
+	char* key = (char *)malloc(MAX_DATA_LEN * sizeof(char));
 	int key_len = strlen(data)-1;
 	int data_len;
 	struct sembuf semaph;
@@ -216,8 +239,8 @@ int parse_data(char* data, char* reply, int* processed, int semid) {
 	*processed += key_len + 1;
 	switch(mode) {
 		case 'g': 
-			bzero(reply, MAX_VAL_LEN);
-			bzero(value, MAX_KEY_LEN);
+			bzero(reply, MAX_DATA_LEN);
+			bzero(value, MAX_DATA_LEN);
 			if (get_key(key, value) == 0) {
 				sprintf(reply, "%c", 110);
 			}
@@ -245,7 +268,7 @@ int parse_data(char* data, char* reply, int* processed, int semid) {
 				exit(1);
 			}
 			fprintf(stderr, " @@ %d - entering critical\n" , getpid());
-
+			sleep(1);
 			add_key(key, value);
 
 			// increment sem
