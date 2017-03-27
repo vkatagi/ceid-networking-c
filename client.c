@@ -116,7 +116,7 @@ int main(int argc, char** argv){
 
 		key = argv[arg_index];
 		++arg_index;
-		
+		sleep(1);
 		switch(command) {
 			case 'g':
 				add_get(sockfd, key);

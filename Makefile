@@ -13,4 +13,6 @@ echo:
 	$(CC) $(CFLAGS) echo_server.c -o echo.out
 serv1:
 	$(CC) $(CFLAGS) serv1.c -o serv1.out
+serv2:
+	$(CC) $(CFLAGS) serv2.c -o serv2.out
 
