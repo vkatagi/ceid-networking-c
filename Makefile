@@ -17,5 +17,5 @@ serv2:
 	$(CC) $(CFLAGS) serv2.c -o serv2.out
 serv3:
 	$(CC) $(CFLAGS) serv3.c -o serv3.out
-
-
+serv4:
+	$(CC) $(CFLAGS) serv4.c -o serv4.out
