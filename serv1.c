@@ -89,7 +89,6 @@ void insert_node(LIST* list, char* in_key, char* in_value) {
 		assert(0);
 	}
 
-	fprintf(stderr, "Was found?: %d\n", found);
 	if (found == 1) {
 		// Key already exists. 	
 		memcpy(result->value, in_value, strlen(in_value)+1);
@@ -178,65 +177,58 @@ int main(int argc, char** argv) {
 //	int iMode = 0;
 //	ioctl(sockfd, FIONBIO, &iMode);
 
-
+	int connection_valid = 1;
 	while(1) {
 		newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
 		if (newsockfd < 0) {
 			perror("ERROR on accept");
 			exit(1);
 		}
-		while(1) {
+		connection_valid = 1;
+		while(connection_valid) {
 			bzero(buffer, BUF_LEN);
 			bzero(answer, BUF_LEN);
-			printf("In Loop! - ...");
 			fflush(stdout);
-			sleep(1); // debug desync
 			n = read(newsockfd,buffer,BUF_LEN);
-			printf(" Read: %d\n", n);
 			if (n < 0) {
 				perror("ERROR reading from socket");
 				exit(1);
 			}
 			if (n == 0) {
+				connection_valid = 0;
 				break;
 			}
-			int i;
-			for (i=0; i<BUF_LEN; ++i) {
-				fprintf(stderr, "%d, ", buffer[i]);
-			}
+
 			int ptr = 0;
-			fprintf(stderr,"Buff len %d, ptr: %d\n", buffer_len(&buffer[ptr]), ptr);
 			while (ptr < n - 1) {
-				if (parse_data(buffer + ptr, answer, &ptr)) {
-					fprintf(stderr,"2- Buff len %d, ptr: %d - %d\n", buffer_len(&buffer[ptr]), ptr, n);
-					write(newsockfd, answer, BUF_LEN);
+				int result_type = parse_data(buffer + ptr, answer, &ptr);
+				if (result_type == -1) {
+					connection_valid = 0;
+					break;
+				}				
+				else if (result_type == 1) {
+					if (write(newsockfd, answer, BUF_LEN) != strlen(answer)) {
+						perror("ERROR on write");
+					}
 				}
-				fprintf(stderr,"3- Buff len %d, ptr: %d\n", buffer_len(&buffer[ptr]), ptr);
 			}
 		}
 		close(newsockfd);
-		fprintf(stderr, "Socket closed!\n");
 	}
 
 	close(sockfd);
 }
 
 void add_key(char* key, char* value) {
-	printf("Put KEY: '%s' VALUE: '%s'\n", key, value);
 	insert_node(&data, key, value);
 }
 
 
 int get_key(char* key, char* value) {
-	printf("Get KEY: '%s'\n", key);
 	char found = 0;
 	L_NODE* result = find_node(&data, key, &found);
 	if (found == 0) {
-		printf("Key doesn't exist.\n");
 		return 0;
-	}
-	else {
-		printf("Value: '%s'\n", result->value);
 	}
 	memcpy(value, result->value, strlen(result->value));
 	return 1;
@@ -244,6 +236,10 @@ int get_key(char* key, char* value) {
 
 int parse_data(char* data, char* reply, int* processed) {
 	char mode = data[0];
+	if (mode != 'g' && mode != 'p') {
+		return -1;
+	}
+
 	char* value = (char *)malloc(MAX_VAL_LEN * sizeof(char));
 	char* key = (char *)malloc(MAX_KEY_LEN * sizeof(char));
 	int key_len = strlen(data)-1;
@@ -255,12 +251,6 @@ int parse_data(char* data, char* reply, int* processed) {
 		case 'g': 
 			bzero(reply, MAX_VAL_LEN);
 			bzero(value, MAX_KEY_LEN);
-			if (get_key(key, value) == 0) {
-				sprintf(reply, "%c", 110);
-			}
-			else {
-				sprintf(reply, "%c%s", 102, value);
-			}
 			free(value);
 			free(key);
 			return 1;

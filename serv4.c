@@ -148,33 +148,34 @@ void* handle_connection(void* connection_info) {
 		bzero(buffer, BUF_LEN);
 		bzero(answer, BUF_LEN);
 		fflush(stdout);
-		sleep(1); // debug desync
 		n = read(newsockfd,buffer,BUF_LEN);
-		printf("Read from fd %d: %d\n", newsockfd, n);
 		if (n < 0) {
 			perror("ERROR reading from socket");
 			exit(1);
 		}
 		if (n == 0) {
-			fprintf(stderr, "Breaking fd %d!\n", newsockfd);
 			break;
 		}
-		int i;
-		for (i=0; i<BUF_LEN; ++i) {
-			fprintf(stderr, "%d, ", buffer[i]);
-		}
+
 		int ptr = 0;
-		fprintf(stderr,"Buff len %d, ptr: %d\n", buffer_len(&buffer[ptr]), ptr);
 		while (ptr < n - 1) {
-			if (parse_data(buffer + ptr, answer, &ptr)) {
-				write(newsockfd, answer, BUF_LEN);
+			int result_type = parse_data(buffer + ptr, answer, &ptr);
+			if (result_type == -1) {
+				close(newsockfd);
+				pthread_exit(NULL);
+				return;
+			}
+			else if (result_type == 1) {
+				if (write(newsockfd, answer, BUF_LEN) != strlen(answer)) {
+					perror("ERROR on write");
+				}
 			}
 
 		}
 	}
 	close(newsockfd);
-	fprintf(stderr, "Socket closed!\n");
 	pthread_exit(NULL);
+	return;
 }
 
 int main(int argc, char** argv) {

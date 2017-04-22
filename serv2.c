@@ -50,7 +50,6 @@ int find_nofill(char* key, char* is_empty) {
 			return i;
 		}
 	}
-	fprintf(stderr, "\n\nArray is too small (%d).\n\n", i);
 	assert(1);
 	return -1;
 }
@@ -91,7 +90,7 @@ int main(int argc, char** argv) {
 	char buffer[BUF_LEN];
 	struct sockaddr_in serv_addr, cli_addr;
 	int n;
-	
+
 	// sem & shm
 	int semid;
 	int mutex = 0;
@@ -124,7 +123,7 @@ int main(int argc, char** argv) {
 
 	listen(sockfd,5);
 	clilen = sizeof(cli_addr);
-	
+
 	parentPid = getpid();
 //	int iMode = 0;
 //	ioctl(sockfd, FIONBIO, &iMode);
@@ -148,7 +147,7 @@ int main(int argc, char** argv) {
 	}
 
 	shmdata = (char*) shmat(shmid, NULL, 0);
-	if (shmdata == -1) {
+	if (*shmdata == -1) {
 		perror("Error on shmat");
 		exit(1);
 	}
@@ -162,66 +161,63 @@ int main(int argc, char** argv) {
 		}
 		currentPid = fork();
 		if (currentPid == 0) {
-
-
-			while(1) {
+			int connection_valid = 1;
+			while(connection_valid) {
 				bzero(buffer, BUF_LEN);
 				bzero(answer, BUF_LEN);
 				fflush(stdout);
-				sleep(1); // debug desync
 				n = read(newsockfd,buffer,BUF_LEN);
 				if (n < 0) {
 					perror("ERROR reading from socket");
 					exit(1);
 				}
 				if (n == 0) {
+					connection_valid = 0;
 					break;
 				}
-				int i;
-//				for (i=0; i<BUF_LEN; ++i) {
-//					fprintf(stderr, "%d, ", buffer[i]);
-//				}
+
 				int ptr = 0;
-				//fprintf(stderr,"Buff len %d, ptr: %d\n", buffer_len(&buffer[ptr]), ptr);
 				while (ptr < n - 1) {
-					if (parse_data(buffer + ptr, answer, &ptr, semid)) {
-						write(newsockfd, answer, BUF_LEN);
+					int result_type = parse_data(buffer + ptr, answer, &ptr, semid);
+					if (result_type == -1) {
+						connection_valid = 0;
+						break;
+					}
+					else if (result_type == 1) {
+						if (write(newsockfd, answer, BUF_LEN) != strlen(answer)) {
+							perror("ERROR on write");
+						}
 					}
 				}
 			}
 			close(newsockfd);
-			fprintf(stderr, "Socket closed!\n");
 			exit(0);
 		}
 		else { // Master server
-			
+
 		}
 	}
 	if (semctl(semid, 0, IPC_RMID) == -1) {
-		printf("Error on semctl clean");
+		perror("Error on semctl clean");
 		exit(1);
 	}
 
 	shmdt(shmdata);	
 	shmctl(shmid, IPC_RMID, NULL);
-	
+
 	close(sockfd);
 }
 
 void add_key(char* key, char* value) {
-	printf("[%d] PUT %s - %s >>\n", getpid(), key, value);
 	insert_pair(key, value);
 }
 
 int get_key(char* key, char* value) {
-	printf("[%d] GET %s ", getpid(), key);
 	char found = find_pair(key, value);
 
 	if (found == 0) {
-		printf("- NOT FOUND <<\n");
 		return 0;
 	}
-	printf("- %s <<\n", value);
 	//memcpy(value, result->value, strlen(result->value));
 
 	return 1;
@@ -257,8 +253,6 @@ int parse_data(char* data, char* reply, int* processed, int semid) {
 			memcpy(value, &data[key_len+2], data_len);
 			*processed += data_len + 1;
 
-			fprintf(stderr, "@@@@@@@ %d # waiting" , getpid());
-			fflush(stderr);
 			// decrement sem
 			semaph.sem_num = 0;
 			semaph.sem_op = -1;
@@ -267,15 +261,13 @@ int parse_data(char* data, char* reply, int* processed, int semid) {
 				perror("Error on decrement semop");
 				exit(1);
 			}
-			fprintf(stderr, " @@ %d - entering critical\n" , getpid());
-			sleep(1);
+
 			add_key(key, value);
 
 			// increment sem
 			semaph.sem_num = 0;
 			semaph.sem_op = 1;
 			semaph.sem_flg = 0;
-			fprintf(stderr, "@@@@@@@ %d # unlock\n" , getpid());
 			if (semop(semid, &semaph, 1) == -1) {
 				perror("Error on increment semop");
 				exit(1);
