@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-O3 -pthread
+CFLAGS=-pthread
 
 all:
 	$(CC) $(CFLAGS) client.c -o client
