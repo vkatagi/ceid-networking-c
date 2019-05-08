@@ -163,7 +163,7 @@ void* handle_connection(void* connection_info) {
 			if (result_type == -1) {
 				close(newsockfd);
 				pthread_exit(NULL);
-				return;
+				return 0;
 			}
 			else if (result_type == 1) {
 				if (write(newsockfd, answer, BUF_LEN) != strlen(answer)) {
@@ -175,7 +175,7 @@ void* handle_connection(void* connection_info) {
 	}
 	close(newsockfd);
 	pthread_exit(NULL);
-	return;
+	return 0;
 }
 
 int main(int argc, char** argv) {
@@ -289,6 +289,8 @@ int parse_data(char* data, char* reply, int* processed) {
 			free(key);
 			return 0;
 	}
+	free(value);
+	free(key);
 	return -1;
 }
 

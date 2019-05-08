@@ -288,6 +288,8 @@ int parse_data(char* data, char* reply, int* processed, int semid) {
 			free(key);
 			return 0;
 	}
+	free(value);
+	free(key);
 	return -1;
 }
 
