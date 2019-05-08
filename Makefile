@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-O3 -pthread
+CFLAGS=-O3 -pthread -Wall -Wextra
 
 all:
 	$(CC) $(CFLAGS) client.c -o client.out
@@ -9,3 +9,6 @@ all:
 	$(CC) $(CFLAGS) serv4.c -o serv4.out
 client:
 	$(CC) $(CFLAGS) client.c -o client.out
+echo:
+	$(CC) $(CFLAGS) echo_server.c -o echo.out
+
