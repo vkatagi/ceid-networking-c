@@ -2,322 +2,271 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/types.h> 
 #include <sys/socket.h>
 #include <netinet/in.h>
-#include <asm/errno.h>
-#include <errno.h>
+#include <sys/ioctl.h>
 
-#define BUF_LEN 10000
-#define MAX_ENTRIES 1000
-#define CHAR_LEN 1000
+//#define NDEBUG
+#include <assert.h>
 
-#define DEBUG_SOCKET 5555
+#define BUF_LEN 255
+#define MAX_KEY_LEN 255
+#define MAX_VAL_LEN 255
 
-#define NDEBUG
 
-#ifndef NDEBUG
-#define debug(__VA_ARGS__) fprintf(stderr, "%s\n", __VA_ARGS__)
-#else
-#define debug(__VA_ARGS__) do{}while(0)
-#endif
+// Although not optimal, a simple list should be enough for the purpose of this project
+typedef struct L_NODE {
+	char* key;
+	char* value;
 
-void exit_error(char *message) {
-    perror(message);
-    exit(1);
+	struct L_NODE* next;
+	struct L_NODE* prev;
+} L_NODE;
+
+typedef struct LIST {
+	L_NODE* first;
+	L_NODE* last;
+} LIST;
+
+L_NODE* init_node(char* in_key, char* in_value) {
+
+	L_NODE* node = (L_NODE*)malloc(sizeof(L_NODE));
+
+	node->key = (char *)malloc(MAX_KEY_LEN * sizeof(char));
+	node->value = (char *)malloc(MAX_VAL_LEN * sizeof(char));
+	
+	memcpy(node->key, in_key, strlen(in_key)+1);
+	memcpy(node->value, in_value, strlen(in_value)+1);
+
+	node->next = NULL;
+	node->prev = NULL;
+
+	return node;
 }
 
-ssize_t readn(int fd, void *void_ptr, size_t n) {
-    size_t bytes_left;
-    ssize_t bytes_read;
-    char *char_ptr;
+void init_list(LIST* list) {
+	L_NODE* nfirst = (L_NODE*)malloc(sizeof(L_NODE));
+	L_NODE* nlast = (L_NODE*)malloc(sizeof(L_NODE));
 
-    char_ptr = void_ptr;
-    bytes_left = n;
-    while (bytes_left > 0) {
-        if ((bytes_read = read(fd, char_ptr, bytes_left)) < 0) {
-            if (errno == EINTR) {
-                bytes_read = 0;
-            } else {
-                return -1;
-            }
-        } else if (bytes_read == 0) {
-            break;
-        }
+	nfirst->next = nlast;
+	nlast->prev = nfirst;
 
-        bytes_left -= bytes_read;
-        char_ptr += bytes_read;
-    }
-
-    return (n - bytes_left);
+	list->first = nfirst;
+	list->last = nlast;
 }
 
-ssize_t writen(int fd, void *void_ptr, size_t n) {
-    size_t bytes_left;
-    ssize_t bytes_written;
-    char *char_ptr;
-
-    char_ptr = void_ptr;
-    bytes_left = n;
-    while (bytes_left > 0) {
-        if ((bytes_written = write(fd, char_ptr, bytes_left)) <= 0) {
-            if (bytes_written < 0 && errno == EINTR) {
-                bytes_written = 0;
-            } else {
-                return -1;
-            }
-        }
-
-        bytes_left -= bytes_written;
-        char_ptr += bytes_written;
-    }
-    return n;
+// TODO: Change data structure for binary search?
+// Non Critical. Doesn't alter the data structure
+L_NODE* find_node(LIST* list, char* search, char* out_found) {
+	int cmp_result;
+	L_NODE* current = list->first->next;
+	while (current != list->last) {
+		cmp_result = strcmp(current->key, search);
+		if (cmp_result < 0) { // means search > key
+			current = current->next;
+		}
+		else if (cmp_result == 0) {
+			*out_found = 1;
+			return current;
+		}
+		else {
+			*out_found = 0;
+			return current;
+		}
+	}
+	return list->last;
 }
 
-void add(char *key, char *value);
+// Critical
+void insert_node(LIST* list, char* in_key, char* in_value) {
+	char found = 0;
+	L_NODE* result;
+	
+	result = find_node(list, in_key, &found);
+	if (result == NULL) {
+		// Reached end ?? wtf
+		assert(0);
+	}
 
-char *get(char *key);
+	if (found == 1) {
+		// Key already exists. 	
+		memcpy(result->value, in_value, strlen(in_value)+1);
+		return;
+	}
 
-typedef struct command {
-    char type;  // 'g' for get
-    // 'p' for put
-    // 'i' for INVALID
-    char *key;
-    char *value;
-};
+	// Insert value before found
+	L_NODE* prev_node = result->prev;
+	L_NODE* insert = init_node(in_key, in_value);
 
-struct command *parse_command(char *buffer, int *current, int buffer_len) {
-    struct command *cmd = (struct command *) malloc(sizeof(struct command));
+	insert->prev = prev_node;
+	insert->next = result;
+	result->prev->next = insert;
+	result->prev = insert;
+}
+/*
+int find_value(LIST* list, char* in_key, char* out_value) {
+	char found = 0;
+	L_NODE* result;
 
-    if (buffer[*current] != 'g' && buffer[*current] != 'p') {
-        cmd->type = 'i';
-        return cmd;
-    } else {
-        cmd->type = buffer[*current];
-    }
+	result = find_node(list, in_key, &found);
+	if (found == 0) {
+		return 0;
+	}
+	memcpy(out_value, result->value, strlen(result->value)+1);
+	return 1;
+}
+*/
 
-    (*current)++;
+// detects 2 /0
+int buffer_len(char* buffer) {
+	int i;	
+	char prev_char = 1;
+	for (i=0; i<BUF_LEN; ++i) {
+		if (prev_char == 0 && buffer[i] == 0) {
+			return i-1;
+		}
+		prev_char = buffer[i];
+	}
 
-    if (buffer[*current] == '\0') {
-        cmd->type = 'i';
-        return cmd;
-    }
-    cmd->key = &buffer[*current];
-
-    while (buffer[*current] != '\0') {
-        (*current)++;
-        if (*current >= buffer_len) {
-            cmd->type = 'i';
-            return cmd;
-        }
-    }
-    (*current)++;
-
-    if (cmd->type == 'g') {
-        return cmd;
-    }
-
-    // cmd->type == 'p'
-    if (buffer[*current] == '\0') {
-        cmd->type = 'i';
-        return cmd;
-    }
-    cmd->value = &buffer[*current];
-
-    while (buffer[*current] != '\0') {
-        (*current)++;
-        if (*current >= buffer_len) {
-            cmd->type = 'i';
-            return cmd;
-        }
-    }
-    (*current)++;
-    return cmd;
+	return -1;
 }
 
-void run_command(struct command *cmd) {
-    if (cmd->type == 'p') {
-        add(cmd->key, cmd->value);
-        return;
-    }
-    cmd->value = get(cmd->key);
+LIST data;
+int parse_data(char* data, char* reply, int* processed);
+
+int main(int argc, char** argv) {
+
+	char* answer = (char*)malloc(500*sizeof(char));
+
+	int sockfd, newsockfd, portno;
+	socklen_t clilen;
+	char buffer[BUF_LEN];
+	struct sockaddr_in serv_addr, cli_addr;
+	int n;
+	
+	if (argc < 2) {
+		fprintf(stderr,"ERROR, no port provided\n");
+		exit(1);
+	}
+
+	init_list(&data);
+
+	sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sockfd < 0) {
+		perror("ERROR opening socket");
+		exit(1);
+	}
+	bzero((char *) &serv_addr, sizeof(serv_addr));
+
+	portno = atoi(argv[1]);
+
+	serv_addr.sin_family = AF_INET;
+	serv_addr.sin_addr.s_addr = INADDR_ANY;
+	serv_addr.sin_port = htons(portno);
+
+	if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
+		perror("ERROR on binding");
+		exit(1);
+	}
+
+	listen(sockfd,5);
+	clilen = sizeof(cli_addr);
+	
+
+//	int iMode = 0;
+//	ioctl(sockfd, FIONBIO, &iMode);
+
+	int connection_valid = 1;
+	while(1) {
+		newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
+		if (newsockfd < 0) {
+			perror("ERROR on accept");
+			exit(1);
+		}
+		connection_valid = 1;
+		while(connection_valid) {
+			bzero(buffer, BUF_LEN);
+			bzero(answer, BUF_LEN);
+			fflush(stdout);
+			n = read(newsockfd,buffer,BUF_LEN);
+			if (n < 0) {
+				perror("ERROR reading from socket");
+				exit(1);
+			}
+			if (n == 0) {
+				connection_valid = 0;
+				break;
+			}
+
+			int ptr = 0;
+			while (ptr < n - 1) {
+				int result_type = parse_data(buffer + ptr, answer, &ptr);
+				if (result_type == -1) {
+					connection_valid = 0;
+					break;
+				}				
+				else if (result_type == 1) {
+					if (write(newsockfd, answer, BUF_LEN) != strlen(answer)) {
+						perror("ERROR on write");
+					}
+				}
+			}
+		}
+		close(newsockfd);
+	}
+
+	close(sockfd);
 }
 
-void answer_command(struct command *cmd, char *answer_buffer, int *answer_length) {
-    if (cmd->type == 'p') {
-        return; // nothing to answer
-    }
-
-    // cmd->type == 'g'
-    if (cmd->value == NULL) {
-        // Not found
-        answer_buffer[(*answer_length)++] = 110;
-    } else {
-        size_t value_length = strlen(cmd->value) + 1;
-        answer_buffer[(*answer_length)++] = 102;
-        memcpy(&answer_buffer[*answer_length], cmd->value, value_length);
-        (*answer_length) += value_length;
-    }
-}
-
-void write_answer(int sockfd, char *answer_buffer, int answer_length) {
-    if (writen(sockfd, answer_buffer, answer_length) != answer_length) {
-        exit_error("Could not write all the data");
-    }
-}
-
-int handle_connection(int sockfd) {
-    char buffer[BUF_LEN];
-    char answer_buffer[BUF_LEN];
-
-    int bytes_read = readn(sockfd, buffer, BUF_LEN);
-    int answer_length = 0;
-
-    if (bytes_read < 0) {
-        exit_error("Could not read from socket");
-    } else if (bytes_read == 0) {
-        // No more data to read
-    }
-
-    int buffer_index = 0;
-    struct command *cmd;
-
-    do {
-        cmd = parse_command(buffer, &buffer_index, bytes_read);
-
-        if (cmd->type == 'i') { // Invalid command.
-            write_answer(sockfd, answer_buffer, answer_length);
-            close(sockfd);
-            free(cmd);
-            debug("Invalid input. Dropping client.");
-            return 1;
-        }
-
-        run_command(cmd);
-        answer_command(cmd, answer_buffer, &answer_length);
-
-        free(cmd);
-    } while (buffer_index < bytes_read);
-
-    write_answer(sockfd, answer_buffer, answer_length);
-    close(sockfd);
-    return 1;
-}
-
-
-int main(int argc, char **argv) {
-    int sockfd;
-    int newsockfd;
-    socklen_t cli_len;
-    struct sockaddr_in serv_addr;
-    struct sockaddr_in cli_addr;
-
-#ifndef NDEBUG
-    printf("Automatically using port %d in debug mode\n", DEBUG_SOCKET);
-#else
-    if (argc < 2) {
-        printf("Please provide port number as an argument.\n");
-        return 0;
-    }
-#endif
-
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-
-    if (sockfd < 0) {
-        exit_error("Socket error.");
-    }
-
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
-#ifndef NDEBUG
-    serv_addr.sin_port = htons(DEBUG_SOCKET);
-    if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-        serv_addr.sin_port = htons(DEBUG_SOCKET+1);
-        printf("Automatically using port %d in debug mode\n", DEBUG_SOCKET + 1);
-        bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
-    }
-#else
-    serv_addr.sin_port = htons(atoi(argv[1]));
-    if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-        exit_error("Error binding socket");
-    }
-#endif
-
-
-    listen(sockfd, 5);
-
-    cli_len = sizeof(cli_addr);
-
-    do {
-        newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &cli_len);
-        if (newsockfd < 0) {
-            exit_error("Error accepting incoming connection");
-        }
-    } while (handle_connection(newsockfd));
-
-    close(sockfd);
-}
-
-//
-// Data implementation.
-//
-//   char* get(char *key);
-//      Returns pointer to the value
-//      Returns NULL if the key is not found
-//
-//   void add(char *key, char *value);
-//
-
-char DatabaseKeys[MAX_ENTRIES][CHAR_LEN];
-char DatabaseValues[MAX_ENTRIES][CHAR_LEN];
-int CurrentEntries = 0;
-
-int find_key(char *key) {
-    int i;
-    for (i = 0; i < CurrentEntries; ++i) {
-        if (strcmp(DatabaseKeys[i], key) == 0) {
-            return i;
-        }
-    }
-    // Key not found
-    return -1;
-}
-
-void set_key(int index, char *value) {
-#ifndef NDEBUG
-    if (index > CurrentEntries) {
-        debug("set_key: Asked for key out of index");
-    }
-#endif
-    strcpy(DatabaseValues[index], value);
-}
-
-void add_key(char *key, char *value) {
-    strcpy(DatabaseKeys[CurrentEntries], key);
-    strcpy(DatabaseValues[CurrentEntries], value);
-    CurrentEntries++;
-}
-
-char *get_key(int key_index) {
-    return DatabaseValues[key_index];
+void add_key(char* key, char* value) {
+	insert_node(&data, key, value);
 }
 
 
-void add(char *key, char *value) {
-    int key_index = find_key(key);
-
-    if (key_index != -1) {
-        set_key(key_index, value);
-    } else {
-        add_key(key, value);
-    }
+int get_key(char* key, char* value) {
+	char found = 0;
+	L_NODE* result = find_node(&data, key, &found);
+	if (found == 0) {
+		return 0;
+	}
+	memcpy(value, result->value, strlen(result->value));
+	return 1;
 }
 
-char *get(char *key) {
-    int key_index = find_key(key);
+int parse_data(char* data, char* reply, int* processed) {
+	char mode = data[0];
+	if (mode != 'g' && mode != 'p') {
+		return -1;
+	}
 
-    if (key_index != -1) {
-        return get_key(key_index);
-    }
+	char* value = (char *)malloc(MAX_VAL_LEN * sizeof(char));
+	char* key = (char *)malloc(MAX_KEY_LEN * sizeof(char));
+	int key_len = strlen(data)-1;
+	int data_len;
 
-    return NULL;
+	memcpy(key, &data[1], key_len+1);
+	*processed += key_len + 1;
+	switch(mode) {
+		case 'g': 
+			bzero(reply, MAX_VAL_LEN);
+			bzero(value, MAX_KEY_LEN);
+			free(value);
+			free(key);
+			return 1;
+		case 'p':
+
+			data_len = strlen(&data[key_len+2])+1;
+			memcpy(value, &data[key_len+2], data_len);
+			*processed += data_len + 1;
+			add_key(key, value);
+			free(value);
+			free(key);
+			return 0;
+	}
+	free(value);
+	free(key);
+	return -1;
 }
+
+
